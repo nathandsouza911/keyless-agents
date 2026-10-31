@@ -119,7 +119,8 @@ async def test_the_sessions_page_needs_sign_in_and_offers_the_profiles(org):
                                      {"Origin": "https://evil.example",
                                       "Content-Type": "application/x-www-form-urlencoded"}])
 async def test_a_cross_site_form_cannot_start_a_session(org, admin_conn, headers):
-    reply = await _post(org, "/ui/sessions", {"profile": "read-only-investigation", "ttl_minutes": "60"},
+    # A profile the analyst may start (SD-055), so only the origin check can refuse it.
+    reply = await _post(org, "/ui/sessions", {"profile": "dormant-accounts", "ttl_minutes": "60"},
                         headers=headers)
     assert reply.status_code == 403
     assert await admin_conn.fetchval("SELECT count(*) FROM runs WHERE tenant_id = $1", org["tid"]) == 0
