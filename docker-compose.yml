@@ -1,0 +1,208 @@
+# Phase 1 stack (threat-model §7.1). Ports bind to 127.0.0.1 only; nothing
+# here is reachable from the LAN.
+#
+#   backend  postgres, redis, api, broker, runner
+#   tasknet  internal: true (no route off the host). The broker and the task
+#            containers the runner starts; nothing else.
+#   egress   the broker (Entra token endpoint, Graph) and the api (Entra
+#            sign-in: token redemption and signing keys).
+#   scriptnet  internal: script runs' task containers and the facade proxy,
+#            which holds the alias graph.microsoft.com there (SD-041).
+#   facadenet  internal: the facade proxy and the broker. The broker is on
+#            neither network that carries the alias, so its own lookups of
+#            graph.microsoft.com reach Microsoft.
+#   mcpnet   internal: the MCP gateway and the broker (SD-052).
+#   mcpfront the MCP gateway alone; it carries the gateway's loopback port
+#            (Docker publishes no port from an internal network).
+#
+# `docker compose up -d postgres redis` starts the data services alone (the
+# test set-up). api, broker and runner are in the `app` profile and need their
+# configuration from the environment (never committed): see .env.example.
+# Each uses its own least-privileged database role (clw db-provision-roles).
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-clw}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - clw_pg_data:/var/lib/postgresql/data
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}"]
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6380}:6379"
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+
+  api:
+    profiles: [app]
+    build: {context: ., dockerfile: docker/api.Dockerfile}
+    environment:
+      DATABASE_URL: ${CLW_API_DATABASE_URL:-}
+      # development: plain-http localhost redirect and non-Secure cookies, and
+      # no fail-closed Redis. Never for a real deployment (TLS first).
+      ENVIRONMENT: ${CLW_API_ENVIRONMENT:-development}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      SESSION_JWT_SECRET: ${SESSION_JWT_SECRET:-}
+      MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID:-}
+      MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET:-}
+      OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI:-}
+      POST_LOGIN_PATH: ${POST_LOGIN_PATH:-/}
+    ports:
+      - "127.0.0.1:${CLW_API_PORT:-8000}:8000"
+    networks: [backend, egress]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+
+  broker:
+    profiles: [app]
+    build: {context: ., dockerfile: docker/broker.Dockerfile}
+    environment:
+      DATABASE_URL: ${CLW_BROKER_DATABASE_URL:-}
+      CLW_PROFILE_DIRREAD_CLIENT_ID: ${CLW_PROFILE_DIRREAD_CLIENT_ID:-}
+      CLW_PROFILE_DIRREAD_CERT_PATH: /run/secrets/profiles/directory-read-auditlog-read.pem
+      CLW_PROFILE_DIRREAD_CERT_THUMBPRINT: ${CLW_PROFILE_DIRREAD_CERT_THUMBPRINT:-}
+      # The agent profile's app (deploy/test-tenant/setup.ps1; SD-053).
+      CLW_PROFILE_AGENTRO_CLIENT_ID: ${CLW_PROFILE_AGENTRO_CLIENT_ID:-}
+      CLW_PROFILE_AGENTRO_CERT_PATH: /run/secrets/profiles/agent-read-only-investigation.pem
+      CLW_PROFILE_AGENTRO_CERT_THUMBPRINT: ${CLW_PROFILE_AGENTRO_CERT_THUMBPRINT:-}
+    volumes:
+      # Profile certificates: the broker's only, read-only, from outside the repo.
+      - ${CLW_PROFILE_CERT_DIR:-./secrets/profiles}:/run/secrets/profiles:ro
+    networks:
+      backend: {}
+      tasknet: {aliases: [broker]}
+      egress: {}
+      facadenet: {}
+      mcpnet: {aliases: [broker]}
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      postgres: {condition: service_healthy}
+
+  # The Graph facade's TLS front (SD-041): no credential, no policy, no Graph access.
+  facade-proxy:
+    profiles: [app]
+    build: {context: ., dockerfile: docker/facade-proxy.Dockerfile}
+    environment:
+      CLW_FACADE_BROKER_URL: http://broker:8080
+    volumes:
+      - ${CLW_FACADE_CERT_DIR:-./secrets/facade}/leaf.crt:/run/secrets/facade/leaf.crt:ro
+      - ${CLW_FACADE_CERT_DIR:-./secrets/facade}/leaf.key:/run/secrets/facade/leaf.key:ro
+    networks:
+      scriptnet: {aliases: [graph.microsoft.com]}
+      facadenet: {}
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: "443"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      broker: {condition: service_started}
+
+  # The MCP endpoint for AI agents (SD-052): no credential, no database, no Graph.
+  mcp-gateway:
+    profiles: [app]
+    build: {context: ., dockerfile: docker/mcp-gateway.Dockerfile}
+    environment:
+      CLW_MCP_BROKER_URL: http://broker:8080
+      CLW_MCP_PUBLIC_URL: ${CLW_MCP_PUBLIC_URL:-http://127.0.0.1:8090/mcp}
+    ports:
+      - "127.0.0.1:${CLW_MCP_PORT:-8090}:8090"
+    networks: [mcpnet, mcpfront]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      broker: {condition: service_started}
+
+  runner:
+    profiles: [app]
+    build: {context: ., dockerfile: docker/runner.Dockerfile}
+    environment:
+      DATABASE_URL: ${CLW_RUNNER_DATABASE_URL:-}
+      CLW_TASK_IMAGE: ${CLW_TASK_IMAGE:-clw-task:phase1}
+      CLW_TASK_BROKER_URL: http://broker:8080
+      # The offline script analyser (SD-043): started with no network, script on stdin.
+      CLW_ANALYSER_IMAGE: ${CLW_ANALYSER_IMAGE:-clw-analyser:m4}
+      # Script runs (SD-044): the PowerShell task image, started on clw_scriptnet
+      # with the script on stdin. Unset, script runs stay queued.
+      CLW_SCRIPT_IMAGE: ${CLW_SCRIPT_IMAGE:-clw-task-pwsh:m5}
+      # What scripts see as CLW_BROKER_URL: the Graph host, which is the facade there.
+      CLW_SCRIPT_BROKER_URL: https://graph.microsoft.com
+      # Container runtime for tasks, scripts and analyses (runsc for gVisor).
+      # Empty: Docker's default runtime (runc).
+      CLW_TASK_RUNTIME: ${CLW_TASK_RUNTIME:-}
+    volumes:
+      # Root-equivalent on the host (threat-model §7.3). No Graph credentials here.
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks: [backend]
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      broker: {condition: service_started}
+
+  # Built only, never started by compose: the runner starts one per script analysis.
+  analyser-image:
+    profiles: [build-only]
+    build: {context: ., dockerfile: docker/analyser.Dockerfile}
+    image: ${CLW_ANALYSER_IMAGE:-clw-analyser:m4}
+
+  # Built only, never started by compose: the runner starts one per script run.
+  # Its only extra build context is the facade CA's public directory, which
+  # holds ca.crt alone (no key reaches the Docker daemon).
+  task-pwsh-image:
+    profiles: [build-only]
+    build:
+      context: .
+      dockerfile: docker/task-pwsh.Dockerfile
+      additional_contexts:
+        facade_ca: ${CLW_FACADE_CERT_DIR:-./secrets/facade}/public
+    image: ${CLW_SCRIPT_IMAGE:-clw-task-pwsh:m5}
+
+  # Built only, never started by compose: the runner starts one per run.
+  task-image:
+    profiles: [build-only]
+    build: {context: ., dockerfile: docker/task.Dockerfile}
+    image: ${CLW_TASK_IMAGE:-clw-task:phase1}
+
+networks:
+  backend: {}
+  tasknet:
+    name: clw_tasknet
+    internal: true
+  egress: {}
+  scriptnet:
+    name: clw_scriptnet
+    internal: true
+  facadenet:
+    internal: true
+  mcpnet:
+    internal: true
+  mcpfront: {}
+
+volumes:
+  clw_pg_data:

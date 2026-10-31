@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}Sign in again: Cloud Locksmith{% endblock %}
+{% block content %}
+<h2>Sign in again to start an agent session</h2>
+<p>Starting a session needs a sign-in from the last {{ minutes }} minutes. Signing in again proves a person, not an
+  agent driving this browser, is starting it.</p>
+<p><a href="{{ sign_in }}">Sign in again</a>, then start the session.</p>
+{% endblock %}

@@ -1,0 +1,32 @@
+{# One change proposal, effect first (SD-054). Everything is escaped (autoescape). Tenant data and agent
+   text are shown only inside their labelled boxes, as text, never as headings. #}
+{% macro proposal(p) %}
+<div class="proposal">
+  <p class="effect"><strong>Disable sign-in</strong> for <strong>1 user</strong>:
+    <code>{{ p.method }} {{ p.path }}</code> setting <code>{{ p.change }}</code>.
+    <span class="state">Filed, not executed</span></p>
+  <p>Object ID (the proposal is bound to this): <code>{{ p.target_id }}</code></p>
+  {% if p.found %}
+  <div class="tenantdata">
+    <p class="label">Tenant data: what Microsoft Entra returned for this ID at {{ p.looked_up_at }}.
+      Written by people in your organisation, not by Cloud Locksmith; it can be misleading.</p>
+    <table>
+      <tr><th>Display name</th><td><code><bdi>{{ p.display_name }}</bdi></code></td></tr>
+      <tr><th>User principal name</th><td><code><bdi>{{ p.upn }}</bdi></code></td></tr>
+      <tr><th>Object ID</th><td><code>{{ p.target_id }}</code></td></tr>
+      <tr><th>Sign-in enabled then</th><td>{{ p.account_enabled }}</td></tr>
+    </table>
+  </div>
+  {% else %}
+  <p class="warning">Warning: {{ p.warning }} Raw ID: <code>{{ p.target_id }}</code></p>
+  {% endif %}
+  <div class="agenttext">
+    <p class="label">The agent's reason: written by the AI agent, not verified.</p>
+    <pre><bdi>{{ p.reason }}</bdi></pre>
+  </div>
+  <p class="muted">Binding: {% if p.binding_ok %}<span class="ok">verified</span>{% else %}<span class="bad">NOT VERIFIED</span>{% endif %}
+    ({{ p.binding_detail }}). Request SHA-256 <code>{{ p.request_sha256 }}</code>.
+    Proposal <code>{{ p.id }}</code>, session <a href="/ui/sessions/{{ p.session_id }}"><code>{{ p.session_id[:8] }}</code></a>,
+    filed {{ p.created_at }}. This version of Cloud Locksmith cannot execute changes.</p>
+</div>
+{% endmacro %}

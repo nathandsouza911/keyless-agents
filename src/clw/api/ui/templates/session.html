@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% from "_proposal.html" import proposal %}
+{% block title %}Session {{ session.id[:8] }}: Cloud Locksmith{% endblock %}
+{% block content %}
+<h2>Agent session <code>{{ session.id }}</code></h2>
+<p>Profile <strong>{{ session.profile }}</strong>. Status: <strong>{{ session.status }}</strong>{% if session.outcome %} ({{ session.outcome }}){% endif %}.
+  Started {{ session.started_at }}; {% if session.status == "running" %}expires {{ session.expires_at }}{% else %}ended {{ session.ended_at }}{% endif %}.</p>
+{% if can_revoke %}
+<form method="post" action="/ui/sessions/{{ session.id }}/revoke"><button type="submit">Revoke this session now</button></form>
+{% endif %}
+
+<h3>Change proposals</h3>
+{% if proposals %}{% for p in proposals %}{{ proposal(p) }}{% endfor %}{% else %}<p class="muted">None.</p>{% endif %}
+
+<h3>Audit trail</h3>
+<p>Chain: {% if audit.chain.valid %}<span class="ok">valid</span>{% else %}<span class="bad">INVALID</span>{% endif %}
+  <span class="muted">(tamper-evident: a changed or deleted record is detected).</span></p>
+<table>
+  <tr><th>#</th><th>Event</th><th>Status</th><th>Operation or reason</th><th>Request</th><th>Recorded</th></tr>
+  {% for e in audit.events %}
+  <tr><td>{{ e.seq }}</td><td>{{ e.event_type }}</td><td>{{ e.status }}</td>
+      <td>{{ e.operation or "" }}{% if e.reason and e.reason != "allowed" %} {{ e.reason }}{% endif %}{% if e.outcome %} {{ e.outcome }}{% endif %}</td>
+      <td>{% if e.request_target %}<code>{{ e.http_method }} {{ e.request_target }}</code>{% endif %}</td><td>{{ e.created_at }}</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block title %}Refused: Cloud Locksmith{% endblock %}
+{% block content %}
+<p class="bad">Refused ({{ status_code }}): <code>{{ detail }}</code></p>
+<p><a href="/ui">Back to scripts</a></p>
+{% endblock %}

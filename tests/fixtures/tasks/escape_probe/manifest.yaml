@@ -1,0 +1,20 @@
+# Test-only manifest for the escape probe (Task 15). Never in the shipped
+# catalog (it lives under tests/fixtures/, not tasks/). timeout_seconds is the
+# minimum (10) so the timeout test does not wait long; the probe sleeps longer
+# and must be killed. The profile and operations must still be real so the
+# manifest loads (SD-030).
+schema_version: 1
+id: escape-probe
+version: 1
+name: Escape Probe
+purpose: Deliberately attempt sandbox escapes so the sandbox tests can prove they fail.
+permission_profile: directory-read-auditlog-read
+mode: app_only
+allowed:
+  - users.list_with_sign_in_activity
+prohibited:
+  - users.update
+params:
+  sleep_seconds: {type: integer, minimum: 1, maximum: 120, default: 60}
+approval_required: false
+timeout_seconds: 10

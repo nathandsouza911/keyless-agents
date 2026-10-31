@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Script {{ script.sha256[:12] }}: Cloud Locksmith{% endblock %}
+{% block content %}
+<h2>Script <code>{{ script.sha256[:16] }}…</code></h2>
+<p class="muted">Submitted {{ script.created_at }}{% if script.submitted_by_you %} by you{% endif %}.
+  Its identity is its SHA-256: an edited script is a new script.</p>
+
+<h3>Analysis</h3>
+{% if not analysis %}
+<p class="muted">No analysis.</p>
+{% elif pending %}
+<p class="muted">Analysing ({{ analysis.status }})… this page refreshes itself.</p>
+{% elif analysis.status == "failed" %}
+<p class="bad">The analysis failed (<code>{{ analysis.reason }}</code>). This script cannot be approved.</p>
+{% else %}
+  {% set summary = analysis.summary %}
+  <h4>What it reads</h4>
+  {% if summary.reads %}<ul>{% for line in summary.reads %}<li>{{ line }}</li>{% endfor %}</ul>
+  {% else %}<p class="muted">Nothing the analysis could resolve.</p>{% endif %}
+  {% if summary.blocked %}
+  <h4 class="bad">What it tries to change (this will be blocked)</h4>
+  <ul>{% for line in summary.blocked %}<li>{{ line }}</li>{% endfor %}</ul>
+  {% endif %}
+  {% if summary.risks %}
+  <h4>Risks</h4>
+  <ul>{% for line in summary.risks %}<li>{{ line }}</li>{% endfor %}</ul>
+  {% endif %}
+  {% if summary.unknown %}
+  <h4>Unknown</h4>
+  <ul>{% for line in summary.unknown %}<li>{{ line }}</li>{% endfor %}</ul>
+  {% endif %}
+  <p class="muted">The analysis explains the script; it does not enforce. At run time every request is checked
+    against the approved manifest, and anything it does not allow is refused.</p>
+
+  <h4>Proposed manifest (reads only)</h4>
+  <pre>{{ proposed }}</pre>
+
+  {% if principal.role == "security_lead" and not script.submitted_by_you %}
+  <h3>Approve</h3>
+  <p>Approve this manifest as it stands, or narrow it first. Writes can never be approved.</p>
+  <form method="post" action="/ui/scripts/{{ script.sha256 }}/approve">
+    <textarea name="manifest" rows="16">{{ proposed }}</textarea>
+    <p><button type="submit">Approve this manifest</button></p>
+  </form>
+  {% elif principal.role == "security_lead" %}
+  <p class="note">You submitted this script, so another security lead must approve it.</p>
+  {% endif %}
+{% endif %}
+
+<h3>Approvals</h3>
+{% if script.approvals %}
+<table>
+  <tr><th>Approved</th><th>Manifest SHA-256</th></tr>
+  {% for a in script.approvals %}
+  <tr><td>{{ a.created_at }}</td><td><code>{{ a.manifest_sha256[:16] }}…</code></td></tr>
+  {% endfor %}
+</table>
+<form method="post" action="/ui/scripts/{{ script.sha256 }}/run">
+  <p><button type="submit">Run under the latest approval</button></p>
+</form>
+{% else %}
+<p class="muted">Not approved yet: it cannot run.</p>
+{% endif %}
+
+<h3>Script text</h3>
+<pre>{{ script.text }}</pre>
+{% endblock %}

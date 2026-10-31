@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Demo sign-in: Cloud Locksmith{% endblock %}
+{% block content %}
+<h2>Sign in to the fictional demo tenant</h2>
+<p>You will be signed in as the one person of a fictional organisation, as its security lead. Its directory is served
+  by a fake Microsoft Graph inside this quick start: its users, admin roles and apps are made up, and some of them
+  are written to try to trick an AI agent.</p>
+<form method="post" action="/ui/demo-signin"><button type="submit">Sign in to the demo</button></form>
+{% endblock %}

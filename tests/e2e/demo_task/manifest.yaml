@@ -1,0 +1,15 @@
+schema_version: 1
+id: dormant-probe-demo
+version: 1
+name: Dormant Probe Demo (E2E only)
+purpose: Offline E2E demo. Lists users with sign-in activity, then attempts a prohibited write that the broker must deny.
+permission_profile: directory-read-auditlog-read
+mode: app_only
+allowed:
+  - users.list_with_sign_in_activity
+prohibited:
+  - users.update
+params:
+  inactive_days: {type: integer, minimum: 30, maximum: 365, default: 90}
+approval_required: false
+timeout_seconds: 120

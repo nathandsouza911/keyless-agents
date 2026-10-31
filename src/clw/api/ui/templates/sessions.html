@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Agent sessions: Cloud Locksmith{% endblock %}
+{% block content %}
+<h2>Start an agent session</h2>
+<p class="muted">A session lets one AI agent use Cloud Locksmith's tools under the profile you choose, until it expires
+  or you revoke it. The agent never gets a Microsoft credential, and every call is checked and audited.</p>
+<form method="post" action="/ui/sessions">
+  {% for p in profiles %}
+  <p><label><input type="radio" name="profile" value="{{ p.id }}" required> <strong>{{ p.name }}</strong></label><br>
+    <span class="muted">{{ p.purpose }} Operations: {% for op in p.operations %}<code>{{ op }}</code>{% if not loop.last %}, {% endif %}{% endfor %}.</span></p>
+  {% endfor %}
+  <p><label>Lifetime <select name="ttl_minutes">{% for t in ttls %}<option value="{{ t }}"{% if t == 60 %} selected{% endif %}>{{ t }} minutes</option>{% endfor %}</select></label>
+    <button type="submit">Start session</button></p>
+</form>
+
+<h2>Your organisation's agent sessions</h2>
+{% if sessions %}
+<table>
+  <tr><th>Session</th><th>Profile</th><th>Status</th><th>Started</th><th>Expires</th></tr>
+  {% for s in sessions %}
+  <tr><td><a href="/ui/sessions/{{ s.id }}"><code>{{ s.id[:8] }}</code></a></td><td>{{ s.profile }}</td>
+      <td>{{ s.status }}{% if s.outcome %} ({{ s.outcome }}){% endif %}</td><td>{{ s.started_at }}</td><td>{{ s.expires_at }}</td></tr>
+  {% endfor %}
+</table>
+{% else %}
+<p class="muted">None yet.</p>
+{% endif %}
+{% endblock %}

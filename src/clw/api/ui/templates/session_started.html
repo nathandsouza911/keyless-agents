@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Session started: Cloud Locksmith{% endblock %}
+{% block content %}
+<h2>Session started</h2>
+<p class="note">This is the session's capability. It is shown <strong>once</strong>: Cloud Locksmith keeps only its hash.
+  Anyone holding it can use this session's tools until <strong>{{ started.expires_at }}</strong>, so treat it like a password.</p>
+<pre>{{ started.capability }}</pre>
+<p>Give it to your agent through an environment variable, never a file in a repository:</p>
+<pre>CLW_MCP_CAPABILITY={{ started.capability }}</pre>
+<p>Claude Code (<code>.mcp.json</code>):</p>
+<pre>{"mcpServers": {"cloud-locksmith": {"type": "http", "url": "{{ mcp_url }}",
+  "headers": {"Authorization": "Bearer ${CLW_MCP_CAPABILITY}"}}}}</pre>
+<p>Profile <strong>{{ started.profile }}</strong>. <a href="/ui/sessions/{{ started.id }}">Watch this session</a> (its audit trail, its proposals, revoke).</p>
+{% endblock %}

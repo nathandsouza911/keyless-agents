@@ -1,0 +1,11 @@
+# Permission profile: names only, NO secrets. The credential entries name
+# environment variables that the broker reads (Task 10); their values are
+# never in this file. Permissions pending A-01.
+id: directory-read-auditlog-read
+version: 1
+mode: app_only
+expected_permissions: [AuditLog.Read.All, User.Read.All]
+credential:
+  client_id_env: CLW_PROFILE_DIRREAD_CLIENT_ID
+  certificate_path_env: CLW_PROFILE_DIRREAD_CERT_PATH
+  thumbprint_env: CLW_PROFILE_DIRREAD_CERT_THUMBPRINT

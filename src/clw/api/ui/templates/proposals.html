@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% from "_proposal.html" import proposal %}
+{% block title %}Change proposals: Cloud Locksmith{% endblock %}
+{% block content %}
+<h2>Change proposals</h2>
+<p class="muted">Changes AI agents asked for. Cloud Locksmith refused to execute each one and filed it here; this version
+  cannot execute changes. Each is shown as the Graph change it would make. Audit chain:
+  {% if chain_valid %}<span class="ok">valid</span>{% else %}<span class="bad">INVALID</span>{% endif %}.</p>
+{% if total > proposals|length %}<p class="note">Showing the latest {{ proposals|length }} of {{ total }} proposals.</p>{% endif %}
+{% if proposals %}{% for p in proposals %}{{ proposal(p) }}{% endfor %}{% else %}<p class="muted">None yet.</p>{% endif %}
+{% endblock %}

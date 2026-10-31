@@ -1,0 +1,20 @@
+# An agent profile (SD-049) on the original two-permission app: dormant
+# accounts only. Used for the first dev-tenant smoke test.
+schema_version: 1
+id: dormant-accounts
+version: 1
+name: Dormant accounts only
+purpose: Find enabled accounts with no recent sign-in. Nothing else can be read, and nothing can be changed.
+permission_profile: directory-read-auditlog-read
+mode: app_only
+allowed:
+  - users.list_with_sign_in_activity
+prohibited:
+  - users.update
+  - users.delete
+  - directory_roles.add_member
+approval_required: false
+timeout_seconds: 300
+# Inert change proposals an agent may file for a person to see (SD-054); never executed.
+proposals: [disable_user]
+start_roles: [analyst, security_lead]

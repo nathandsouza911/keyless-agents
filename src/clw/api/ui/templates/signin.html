@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block content %}
+{% if demo_mode is defined and demo_mode %}
+<p>This is the quick start: a fictional organisation on fake Microsoft Graph.</p>
+<p><a href="/ui/demo-signin">Sign in to the fictional demo tenant</a></p>
+{% else %}
+<p>Sign in with your organisation's Microsoft account to start agent sessions and review their proposals.</p>
+<p><a href="/auth/microsoft/start">Sign in with Microsoft</a></p>
+{% endif %}
+{% endblock %}

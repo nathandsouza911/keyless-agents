@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "cloud-locksmith": {
+      "type": "http",
+      "url": "http://127.0.0.1:8090/mcp",
+      "headers": {"Authorization": "Bearer ${CLW_MCP_CAPABILITY}"}
+    }
+  }
+}

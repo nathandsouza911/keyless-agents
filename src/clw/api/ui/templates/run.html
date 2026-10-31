@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Run {{ run.id[:8] }}: Cloud Locksmith{% endblock %}
+{% block content %}
+<h2>Run <code>{{ run.id }}</code></h2>
+<p>Status: <strong>{{ run.status }}</strong>{% if run.outcome %} ({{ run.outcome }}){% endif %}
+  {% if pending %}<span class="muted">: this page refreshes itself.</span>{% endif %}</p>
+
+<h3>Output</h3>
+{% if run.result_redacted %}
+<p class="note">The result was redacted. Its digest stays in the audit chain; the data is gone.</p>
+{% elif result and result.kind == "script_output" %}
+<p>The script's own exit code: <strong>{{ result.script_exit_code }}</strong>.
+  <span class="muted">Shown as text: the output is the script's, untrusted.</span></p>
+<pre>{{ result.output }}</pre>
+{% elif other_result %}
+<pre>{{ other_result }}</pre>
+{% else %}
+<p class="muted">No output yet.</p>
+{% endif %}
+
+<h3>Audit trail</h3>
+<p>Chain: {% if audit.chain.valid %}<span class="ok">valid</span>{% else %}<span class="bad">INVALID</span>{% endif %}
+  <span class="muted">(tamper-evident: a changed or deleted record is detected).</span></p>
+<table>
+  <tr><th>#</th><th>Event</th><th>Status</th><th>Operation or reason</th><th>Recorded</th></tr>
+  {% for e in audit.events %}
+  <tr><td>{{ e.seq }}</td><td>{{ e.event_type }}</td><td>{{ e.status }}</td>
+      <td>{{ e.operation or e.reason or "" }}</td><td>{{ e.created_at }}</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

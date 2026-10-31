@@ -1,0 +1,121 @@
+# Cloud Locksmith quick start (v0.1; SD-051): a fictional tenant on fake Microsoft Graph.
+# No Microsoft tenant, no Azure account, no credentials. DEMO ONLY: the api and the demo broker refuse
+# to start in production or with any real Entra setting or profile credential.
+#
+#   docker compose -f quickstart/compose.yml up -d --build
+#   then open http://127.0.0.1:8080/ui   (MCP endpoint for agents: http://127.0.0.1:8090/mcp)
+#
+# Networks (nothing here can reach the internet except through Docker's published loopback ports):
+#   backend   internal: postgres, setup, broker, api
+#   graphnet  internal: the broker and the fake Graph, which holds the name graph.microsoft.com there
+#   mcpnet    internal: the MCP gateway and the broker
+#   uifront   the api alone, for its loopback port
+#   mcpfront  the gateway alone, for its loopback port
+
+name: cloud-locksmith-quickstart
+
+# One image for setup, fake Graph, broker and api: built once (by setup), reused by the others.
+x-image: &image
+  image: cloud-locksmith-quickstart:local
+  pull_policy: never
+
+x-hardened: &hardened
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+
+x-database: &database
+  # A throwaway password for a database that exists only inside this quick start (no port is published).
+  DATABASE_URL: postgresql+asyncpg://clw:quickstart-only@postgres:5432/clw
+
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: clw
+      POSTGRES_PASSWORD: quickstart-only
+      POSTGRES_DB: clw
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clw -d clw"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  # One-time: the quick start's own CA and keys, the database schema, the fictional tenant and its person.
+  setup:
+    <<: *image
+    build: {context: .., dockerfile: docker/quickstart.Dockerfile}
+    pull_policy: build
+    user: "0:0"  # writes the shared demo volume
+    command: ["/srv/.venv/bin/python", "-m", "clw.demo.setup", "/demo"]
+    environment:
+      <<: *database
+    volumes: [demo:/demo]
+    networks: [backend]
+    depends_on:
+      postgres: {condition: service_healthy}
+
+  fake-graph:
+    <<: *image
+    user: "0:0"  # binds 443: the broker reaches https://graph.microsoft.com with no port
+    command: ["/srv/.venv/bin/uvicorn", "clw.demo.fake_graph:app", "--host", "0.0.0.0", "--port", "443",
+              "--ssl-keyfile", "/demo/graph.key.pem", "--ssl-certfile", "/demo/graph.cert.pem",
+              "--no-server-header", "--log-level", "warning"]
+    volumes: ["demo:/demo:ro"]
+    networks:
+      graphnet: {aliases: [graph.microsoft.com]}
+    depends_on:
+      setup: {condition: service_completed_successfully}
+
+  broker:
+    <<: [*image, *hardened]
+    command: ["/srv/.venv/bin/uvicorn", "--factory", "clw.demo.broker:create_demo_broker_app",
+              "--host", "0.0.0.0", "--port", "8080", "--no-server-header"]
+    environment:
+      <<: *database
+      CLW_DEMO_DIR: /demo
+    volumes: ["demo:/demo:ro"]
+    networks:
+      backend: {}
+      graphnet: {}
+      mcpnet: {aliases: [broker]}
+    depends_on:
+      setup: {condition: service_completed_successfully}
+      fake-graph: {condition: service_started}
+
+  api:
+    <<: [*image, *hardened]
+    command: ["/bin/sh", "-c", "SESSION_JWT_SECRET=\"$$(cat /demo/session_secret)\" exec /srv/.venv/bin/uvicorn --factory clw.api.main:create_production_app --host 0.0.0.0 --port 8080 --no-server-header"]
+    environment:
+      <<: *database
+      ENVIRONMENT: development  # plain-http localhost cookies; demo mode is refused in production
+      CLW_DEMO_MODE: "true"
+      CLW_MCP_PUBLIC_URL: http://127.0.0.1:8090/mcp
+    volumes: ["demo:/demo:ro"]
+    ports: ["127.0.0.1:8080:8080"]
+    networks: [backend, uifront]
+    depends_on:
+      setup: {condition: service_completed_successfully}
+
+  mcp-gateway:
+    image: cloud-locksmith-gateway:local
+    build: {context: .., dockerfile: docker/mcp-gateway.Dockerfile}
+    <<: *hardened
+    environment:
+      CLW_MCP_BROKER_URL: http://broker:8080
+      CLW_MCP_PUBLIC_URL: http://127.0.0.1:8090/mcp
+    ports: ["127.0.0.1:8090:8090"]
+    networks: [mcpnet, mcpfront]
+    depends_on:
+      broker: {condition: service_started}
+
+networks:
+  backend: {internal: true}
+  graphnet: {internal: true}
+  mcpnet: {internal: true}
+  uifront: {}
+  mcpfront: {}
+
+volumes:
+  demo: {}

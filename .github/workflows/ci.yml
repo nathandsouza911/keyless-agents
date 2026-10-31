@@ -1,0 +1,89 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    # No network services, no Docker, no tenant. Must always pass.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --python 3.11 --locked
+      - run: uv run pytest -m "not pg and not redis and not sandbox and not tenant and not e2e"
+  pg:
+    # Real Postgres: audit triggers, privileges, concurrency, fail-closed writer.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: clw
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: clw
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U clw -d clw"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      TEST_PG_ADMIN_DSN: postgresql://clw:ci-only-password@127.0.0.1:5433/clw
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --python 3.11 --locked
+      - run: uv run pytest -m pg
+      - run: uv run pytest -m pg
+        env:
+          CLW_TEST_SESSION_ROLE: app
+      - run: uv run python scripts/audit_mutation_check.py
+  redis:
+    # Real Redis: session revocation and rate-limit windows (SD-011, SD-027).
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports: ["6380:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      TEST_REDIS_URL: redis://127.0.0.1:6380/15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --python 3.11 --locked
+      - run: uv run pytest -m redis
+  sandbox:
+    # Real Docker on the Linux runner: proves the task container cannot reach
+    # external hosts, read secrets, escalate, or exceed its limits (Task 15,
+    # SD-008). Linux is the source of truth for these properties (threat-model
+    # §7.4). The timeout test also needs Postgres.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: clw
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: clw
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U clw -d clw"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      TEST_PG_ADMIN_DSN: postgresql://clw:ci-only-password@127.0.0.1:5433/clw
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --python 3.11 --locked
+      - name: Build the escape-probe image
+        run: docker build -f docker/task-probe.Dockerfile -t clw-task-probe:test .
+      - name: Build the script analyser image (SD-043)
+        run: docker build -f docker/analyser.Dockerfile -t clw-analyser:test .
+      - name: Sandbox escape tests
+        run: uv run pytest -m sandbox

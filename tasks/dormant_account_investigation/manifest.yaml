@@ -1,0 +1,17 @@
+schema_version: 1
+id: dormant-account-investigation
+version: 1
+name: Dormant Account Investigation
+purpose: Identify enabled accounts with no successful sign-in within the chosen number of days.
+permission_profile: directory-read-auditlog-read
+mode: app_only
+allowed:
+  - users.list_with_sign_in_activity
+prohibited:
+  - users.update
+  - users.delete
+  - directory_roles.add_member
+params:
+  inactive_days: {type: integer, minimum: 30, maximum: 365, default: 90}
+approval_required: false
+timeout_seconds: 300

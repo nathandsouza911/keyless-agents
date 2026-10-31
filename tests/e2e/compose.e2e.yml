@@ -1,0 +1,188 @@
+# Offline Phase 1 E2E topology (Task 17A). Images are prebuilt by the test
+# harness (clw-broker:e2e, clw-runner:e2e, clw-task:phase1); every E2E-only
+# detail here is a mount, command or environment value — no production image
+# or source is changed. Host paths come from the environment the conftest sets.
+#
+#   backend  postgres, broker, runner, api
+#   tasknet  internal: true; the broker (alias "broker") and the task
+#            containers the runner starts. No route off the host.
+#   egress   the broker and the fake Graph (aliased graph.microsoft.com).
+#   scriptnet  internal: true; script runs' containers and the facade proxy,
+#            which holds the name graph.microsoft.com there (SD-041).
+#   facadenet  internal: true; the facade proxy and the broker.
+#   mcpnet   internal: true; the MCP gateway and the broker (SD-052).
+#   mcpfront the MCP gateway alone, for its loopback port.
+#
+# The task container can reach only the broker (tasknet). The broker reaches
+# the fake Graph over egress at the pinned https://graph.microsoft.com, whose
+# TLS the broker trusts because ca.pem is mounted over its certifi bundle.
+
+name: clw-e2e
+
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: ${E2E_PG_USER}
+      POSTGRES_PASSWORD: ${E2E_PG_PASSWORD}
+      POSTGRES_DB: ${E2E_PG_DB}
+    ports: ["127.0.0.1:${E2E_PG_PORT}:5432"]
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+
+  fake-graph:
+    image: clw-broker:e2e
+    user: "0:0"  # bind 443 (the transport reaches https://graph.microsoft.com with no port)
+    command: ["/srv/.venv/bin/uvicorn", "fake_graph:app", "--host", "0.0.0.0", "--port", "443",
+              "--ssl-keyfile", "/certs/graph.key.pem", "--ssl-certfile", "/certs/graph.cert.pem",
+              "--no-server-header"]
+    environment:
+      PYTHONPATH: /e2e
+    volumes:
+      - ${E2E_DIR}:/e2e:ro
+      - ${E2E_CERTS_DIR}:/certs:ro
+    networks:
+      egress:
+        aliases: [graph.microsoft.com]
+    ports: ["127.0.0.1:${E2E_GRAPH_PORT}:443"]
+
+  broker:
+    image: clw-broker:e2e
+    command: ["/srv/.venv/bin/uvicorn", "--factory", "e2e_broker:create_e2e_broker_app",
+              "--host", "0.0.0.0", "--port", "8080", "--no-server-header"]
+    environment:
+      DATABASE_URL: ${E2E_DATABASE_URL}
+      PYTHONPATH: /e2e
+      CLW_PROFILE_DIRREAD_CLIENT_ID: ${E2E_PROFILE_CLIENT_ID}
+      CLW_PROFILE_DIRREAD_CERT_PATH: /profile/key.pem
+      CLW_PROFILE_DIRREAD_CERT_THUMBPRINT: ${E2E_PROFILE_THUMBPRINT}
+      # The agent profile's app (SD-053); the same test key, a different client id.
+      CLW_PROFILE_AGENTRO_CLIENT_ID: ${E2E_AGENT_PROFILE_CLIENT_ID}
+      CLW_PROFILE_AGENTRO_CERT_PATH: /profile/key.pem
+      CLW_PROFILE_AGENTRO_CERT_THUMBPRINT: ${E2E_PROFILE_THUMBPRINT}
+    volumes:
+      - ${E2E_DIR}:/e2e:ro
+      - ${E2E_PROFILE_KEY}:/profile/key.pem:ro
+      - ${E2E_CA_PEM}:${E2E_CERTIFI_PATH}:ro  # the broker trusts exactly this test CA
+    networks:
+      backend: {}
+      tasknet: {aliases: [broker]}
+      egress: {}
+      facadenet: {}
+      mcpnet: {aliases: [broker]}
+    ports: ["127.0.0.1:${E2E_BROKER_PORT}:8080"]
+    depends_on:
+      postgres: {condition: service_healthy}
+
+  # The Graph facade's TLS front (SD-041), as in docker-compose.yml, with this
+  # run's facade CA leaf (the PowerShell image trusts that CA alone).
+  facade-proxy:
+    image: clw-facade-proxy:e2e
+    environment:
+      CLW_FACADE_BROKER_URL: http://broker:8080
+    volumes:
+      - ${E2E_FACADE_DIR}/leaf.crt:/run/secrets/facade/leaf.crt:ro
+      - ${E2E_FACADE_DIR}/leaf.key:/run/secrets/facade/leaf.key:ro
+    networks:
+      scriptnet: {aliases: [graph.microsoft.com]}
+      facadenet: {}
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: "443"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      broker: {condition: service_started}
+
+  # The MCP endpoint for agents (SD-052), as in docker-compose.yml.
+  mcp-gateway:
+    image: clw-mcp-gateway:e2e
+    environment:
+      CLW_MCP_BROKER_URL: http://broker:8080
+      CLW_MCP_PUBLIC_URL: http://127.0.0.1:${E2E_MCP_PORT}/mcp
+    networks: [mcpnet, mcpfront]
+    ports: ["127.0.0.1:${E2E_MCP_PORT}:8090"]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      broker: {condition: service_started}
+
+  runner:
+    image: clw-runner:e2e
+    environment:
+      DATABASE_URL: ${E2E_DATABASE_URL}
+      CLW_TASK_IMAGE: clw-task:e2e
+      CLW_TASK_BROKER_URL: http://broker:8080
+      CLW_ANALYSER_IMAGE: clw-analyser:e2e
+      CLW_SCRIPT_IMAGE: clw-task-pwsh:e2e
+      CLW_SCRIPT_BROKER_URL: https://graph.microsoft.com
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks: [backend]
+    depends_on:
+      postgres: {condition: service_healthy}
+      broker: {condition: service_started}
+
+  api:
+    image: clw-broker:e2e
+    command: ["/srv/.venv/bin/uvicorn", "clw.api.main:create_production_app", "--factory",
+              "--host", "0.0.0.0", "--port", "8080", "--no-server-header"]
+    environment:
+      DATABASE_URL: ${E2E_DATABASE_URL}
+      ENVIRONMENT: test
+      SESSION_JWT_SECRET: ${E2E_SESSION_SECRET}
+    networks: [backend]
+    ports: ["127.0.0.1:${E2E_API_PORT}:8080"]
+    depends_on:
+      postgres: {condition: service_healthy}
+
+  # The production-mode check (profile `prod`; tests/e2e/test_production_mode.py):
+  # the same api image with ENVIRONMENT=production and its Redis. No depends_on
+  # redis, so the test can start the api without it and see it refuse to start.
+  # The sign-in values are placeholders: starting a sign-in contacts nothing.
+  redis:
+    profiles: [prod]
+    image: redis:7-alpine
+    command: ["redis-server", "--requirepass", "${E2E_REDIS_PASSWORD}"]
+    networks: [backend]
+
+  api-prod:
+    profiles: [prod]
+    image: clw-broker:e2e
+    command: ["/srv/.venv/bin/uvicorn", "clw.api.main:create_production_app", "--factory",
+              "--host", "0.0.0.0", "--port", "8080", "--no-server-header"]
+    environment:
+      DATABASE_URL: ${E2E_DATABASE_URL}
+      ENVIRONMENT: production
+      SESSION_JWT_SECRET: ${E2E_SESSION_SECRET}
+      REDIS_URL: redis://:${E2E_REDIS_PASSWORD}@redis:6379/0
+      MICROSOFT_CLIENT_ID: aaaaaaaa-1111-4222-8333-444444444444
+      MICROSOFT_CLIENT_SECRET: placeholder-not-a-secret
+      OIDC_REDIRECT_URI: https://workbench.invalid/auth/microsoft/callback
+    networks: [backend]
+    ports: ["127.0.0.1:${E2E_API_PROD_PORT}:8080"]
+
+networks:
+  backend: {}
+  # clw_tasknet is the fixed sandbox network (sandbox_spec.TASK_NETWORK); the
+  # harness creates it (internal) so this and the runner-started task containers
+  # share it. External here so compose does not fight an existing one.
+  tasknet:
+    name: clw_tasknet
+    external: true
+  egress: {}
+  # The fixed script network (sandbox_spec.SCRIPT_NETWORK), created by the
+  # harness like tasknet.
+  scriptnet:
+    name: clw_scriptnet
+    external: true
+  facadenet:
+    internal: true
+  mcpnet:
+    internal: true
+  mcpfront: {}

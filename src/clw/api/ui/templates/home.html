@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Submit a script</h2>
+<p class="muted">The script is analysed offline: it is read, never run, until a security lead approves what it may read.</p>
+<form method="post" action="/ui/scripts">
+  <textarea name="text" rows="14" required placeholder="Paste a PowerShell script that uses the Microsoft Graph SDK"></textarea>
+  <p><button type="submit">Submit for analysis</button></p>
+</form>
+
+<h2>Your organisation's scripts</h2>
+{% if scripts %}
+<table>
+  <tr><th>Script (SHA-256)</th><th>Submitted</th><th>Analysis</th></tr>
+  {% for s in scripts %}
+  <tr><td><a href="/ui/scripts/{{ s.sha256 }}"><code>{{ s.sha256[:16] }}…</code></a></td>
+      <td>{{ s.created_at }}</td><td>{{ s.status or "none" }}</td></tr>
+  {% endfor %}
+</table>
+{% else %}
+<p class="muted">None yet.</p>
+{% endif %}
+{% endblock %}

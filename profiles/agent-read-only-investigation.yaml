@@ -1,0 +1,12 @@
+# Permission profile: names only, NO secrets. The credential entries name
+# environment variables that the broker reads; their values are never in this
+# file. App registration: docs/runbooks/dev-tenant-setup.md §3b (A-31, A-32).
+# Application permissions only: no Directory.Read.All, no delegated grants.
+id: agent-read-only-investigation
+version: 1
+mode: app_only
+expected_permissions: [Application.Read.All, AuditLog.Read.All, RoleManagement.Read.Directory, User.Read.All]
+credential:
+  client_id_env: CLW_PROFILE_AGENTRO_CLIENT_ID
+  certificate_path_env: CLW_PROFILE_AGENTRO_CERT_PATH
+  thumbprint_env: CLW_PROFILE_AGENTRO_CERT_THUMBPRINT

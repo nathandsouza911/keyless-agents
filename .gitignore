@@ -1,0 +1,26 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+*.pem
+*.pfx
+*.key
+secrets/
+.pytest_cache/
+.coverage
+audit-checkpoints/
+audit-keys/
+
+# Task 17A E2E run artifacts (certs, keys): never committed
+tests/e2e/.artifacts/
+
+# gVisor evaluation output (scripts/gvisor_eval.sh)
+gvisor-eval/
+
+# Real conversation notes (private; never committed or exported)
+docs/validation/recorded_responses.txt
+.pg-stress/
+.discoverability/
