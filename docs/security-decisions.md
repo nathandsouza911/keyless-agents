@@ -1542,3 +1542,23 @@ Status values: `proposed` (design, awaiting approval), `accepted` (approved, not
   - `tests/db/test_agent_ui_pages.py`: the profiles offered, stale sign-in, sign-out from the page;
   - `tests/security/test_signin.py` (`prompt=login`);
   - eight mutants, all killed.
+
+## SD-056: The agent gets a generic refusal reason; the specific one stays in the audit
+
+- **Status:** implemented (`src/clw/mcp_gateway/tools.py::refusal`; public feedback, 2026-11-01)
+- **Problem:** a refused tool call returned the broker's internal reason code (`manifest_changed`, `proposal_limit`, `actor_not_allowed`…) and a specific explanation. An agent, or whoever is steering it through injected text, could probe which check refused it and adjust.
+- **Decision:** the agent gets `{"refused": true, "reason": <one short sentence>, "sent_to_microsoft": <false | null>}`, and nothing else. The sentence is one of five:
+  - **"Not permitted by this session's profile."** Every policy refusal: an operation outside the profile, a write, proposals not allowed, the proposal limit, and any unknown 403.
+  - **"This session is no longer valid. A person must start a new session."** Any 401, and the 403s that end the session: expired, revoked or unknown, profile changed, tenant disabled, starter no longer allowed, agent sessions disabled.
+  - **"That request was not understood…"** The broker found the change request malformed.
+  - **"The request to Microsoft failed…"** A 502: something may have reached Microsoft (`sent_to_microsoft: null`).
+  - **"Cloud Locksmith could not complete the request."** Anything else, including a halted audit (`null`).
+- **What stays specific:** the broker's audit record (`OP_DECISION` with its `reason`) is unchanged, so the person reviewing the session sees exactly why.
+- **Tests:**
+  - `tests/unit/test_mcp_gateway_tools.py::test_a_refusal_is_generic_and_says_whether_anything_was_sent`: the exact payload for each reason class, and that the broker's code never appears in it;
+  - `tests/unit/test_mcp_gateway_directory_tools.py::test_a_refused_proposal_is_explained`;
+  - one mutant (the specific reason appended to the agent's text), killed.
+- **Discoverability:** re-run after the change; see `docs/spikes/mcp-discoverability.md`.
+- **Limits:**
+  - The split between "not permitted" and "session no longer valid" still tells the agent which of the two it hit. That's deliberate: it has to tell the user to start a new session, rather than retry.
+  - Timing and the HTTP status of the gateway's own 401 are unchanged.

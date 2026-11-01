@@ -859,6 +859,10 @@ MUTATIONS = [
     ("gateway: any Host header is served", S_GATEWAY, GATEWAY_UNIT,
      "TransportSecuritySettings(enable_dns_rebinding_protection=True,",
      "TransportSecuritySettings(enable_dns_rebinding_protection=False,"),
+    ("gateway: the agent is told the broker's specific refusal reason (SD-056)", "src/clw/mcp_gateway/tools.py",
+     ["tests/unit/test_mcp_gateway_tools.py"],
+     '    return {"refused": True, "reason": said, "sent_to_microsoft": sent}',
+     '    return {"refused": True, "reason": f"{said} ({reason})", "sent_to_microsoft": sent}'),
     # --- agent sessions (SD-049)
     ("sessions: the end function ends any kind of run", S_SESSION_MIG, SESSION_TABLE_DB,
      "     WHERE id = p_run_id AND tenant_id = p_tenant_id AND kind = 'agent_session' AND status = 'running';",

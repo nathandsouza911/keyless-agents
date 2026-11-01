@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 import httpx
 import pytest
 
+from clw.mcp_gateway import tools
 from clw.mcp_gateway.app import BrokerClient, create_app
 from clw.mcp_gateway.tools import USER_SELECT
 
@@ -127,12 +128,17 @@ async def test_out_of_range_days_are_an_error_and_nothing_is_asked(days):
     assert result.is_error is True and not broker.ops
 
 
-@pytest.mark.parametrize("status, reason, sent", [
-    (403, "denied", False), (403, "deadline_exceeded", False), (401, "run_token_invalid", False),
-    (403, "manifest_changed", False), (502, "graph_unavailable", None), (503, "run_halted", None),
+@pytest.mark.parametrize("status, reason, said, sent", [
+    (403, "denied", tools.NOT_PERMITTED, False), (403, "write_not_executable", tools.NOT_PERMITTED, False),
+    (403, "proposal_limit", tools.NOT_PERMITTED, False), (403, "proposal_not_in_profile", tools.NOT_PERMITTED, False),
+    (403, "made_up_reason", tools.NOT_PERMITTED, False),
+    (403, "deadline_exceeded", tools.SESSION_ENDED, False), (401, "run_token_invalid", tools.SESSION_ENDED, False),
+    (403, "manifest_changed", tools.SESSION_ENDED, False), (403, "tenant_disabled", tools.SESSION_ENDED, False),
+    (403, "actor_not_allowed", tools.SESSION_ENDED, False), (401, "anything", tools.SESSION_ENDED, False),
+    (502, "graph_unavailable", tools.MICROSOFT_FAILED, None), (503, "run_halted", tools.UNAVAILABLE, None),
 ])
-async def test_a_refusal_says_why_and_whether_anything_was_sent(status, reason, sent):
+async def test_a_refusal_is_generic_and_says_whether_anything_was_sent(status, reason, said, sent):
+    # SD-056: the agent gets a short generic reason; the specific one stays in the audit trail.
     payload = _payload(await _call(FakeBroker(status, {"status": "denied", "reason": reason}), {}))
-    assert payload["refused"] is True and payload["reason"] == reason and payload["sent_to_microsoft"] is sent
-    assert payload["explanation"]
-    assert "data" not in payload
+    assert payload == {"refused": True, "reason": said, "sent_to_microsoft": sent}
+    assert reason not in json.dumps(payload)

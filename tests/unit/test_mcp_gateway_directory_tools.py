@@ -11,7 +11,7 @@ import json
 import httpx
 import pytest
 
-from clw.mcp_gateway import directory
+from clw.mcp_gateway import directory, tools
 from clw.mcp_gateway.tools import ASSIGNED_TO_SELECT, SP_SELECT
 from tests.unit.test_mcp_gateway_tools import CAPABILITY, FakeBroker, _payload, _session
 
@@ -189,7 +189,7 @@ async def test_malformed_disable_requests_never_reach_the_broker(arguments):
 async def test_a_refused_proposal_is_explained():
     payload = _payload(await _disable(ProposeBroker(403, {"status": "denied", "reason": "deadline_exceeded"}),
                                       {"user_id": TARGET, "reason": "x"}))
-    assert payload["refused"] is True and "expired" in payload["explanation"]
+    assert payload == {"refused": True, "reason": tools.SESSION_ENDED, "sent_to_microsoft": False}
 
 
 async def test_the_tool_says_it_never_executes():
