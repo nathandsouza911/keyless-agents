@@ -25,6 +25,7 @@ Cloud Locksmith sits between an AI agent (Claude Code, or any MCP client) and Mi
 - **Cloud Locksmith never gives the agent a credential.** An agent connected to it never receives a Graph token, certificate or secret. Credentials it finds elsewhere on its own machine are another matter: see below.
 - **The agent works inside a session** a person started, under a profile the person chose, which expires.
 - **Cloud Locksmith enforces the profile,** not the agent or the model. A call outside the profile is refused before anything reaches Microsoft, the refusal is audited with its specific reason, and the agent is told it was refused and whether anything reached Microsoft.
+- **Profiles limit the data, not just the calls.** Each operation returns only the fields its profile declares, down to nested objects; Cloud Locksmith drops everything else Graph sends before the agent sees it ([below](#data-scoping-which-fields-reach-the-agent)).
 - **Changes are never executed.** An agent can ask for one, and the request is filed as a proposal for a person to see.
 - **Everything goes into a hash-chained audit trail,** per session: every Graph request and every refusal. It's tamper-evident **only up to your last off-host checkpoint**: whoever controls the host or the database can rewrite everything after it ([how to checkpoint](docs/audit-checkpoints.md)).
 
@@ -54,7 +55,49 @@ The full walkthrough is in [`quickstart/README.md`](quickstart/README.md). It co
 | **Proposals** | A requested change is refused, bound to the exact object and request by hash, and filed for a person to see. The target's name comes from Cloud Locksmith's own lookup, never from the agent. **Nobody can approve or execute a proposal in v0.1** |
 | **Audit** | Write-ahead and hash-chained: the record is written before the request is sent, and if it can't be written, nothing is sent. A changed or deleted record is detected when the chain is verified. **A consistent rewrite of the whole chain is not**, unless a signed checkpoint stored where the host and the DBA can't write still covers it. v0.1 doesn't schedule checkpoints or store them off-host for you: [docs/audit-checkpoints.md](docs/audit-checkpoints.md) shows how |
 
-### What v0.1 does not do
+## Data scoping: which fields reach the agent
+
+A profile doesn't only say *which operations* a session may call. Each operation also fixes **which fields it returns**, and Cloud Locksmith removes every other field from Graph's answer before it reaches the agent. That includes fields inside nested and expanded objects. For example:
+
+| Operation | Fields the agent can see | Nested fields |
+|---|---|---|
+| `users.list_with_sign_in_activity` (dormant accounts) | `id`, `displayName`, `userPrincipalName`, `userType`, `accountEnabled`, `createdDateTime`, `signInActivity` | `signInActivity`: `lastSignInDateTime`, `lastSuccessfulSignInDateTime`, `lastNonInteractiveSignInDateTime` |
+| `directory.list_role_assignments` (admin role holders) | `id`, `principalId`, `roleDefinitionId`, `directoryScopeId`, `principal` | `principal` (expanded): `id`, `displayName`, `userPrincipalName`, `@odata.type` |
+| `service_principals.list_app_role_assigned_to` (app permissions) | `id`, `appRoleId`, `principalId`, `principalDisplayName`, `principalType`, `createdDateTime` | none |
+
+So an agent investigating dormant accounts never sees a user's phone numbers, manager, licences or sign-in IP addresses. That holds even though the app's `User.Read.All` and `AuditLog.Read.All` permissions would let the broker read them. The request is fixed too: the `$select` is part of the operation, and the agent can't change it. The tests are in `tests/security/test_agent_reads.py` (SD-053).
+
+## Identity and attribution
+
+- **The credential:** the broker calls Graph with **application permissions** and a **certificate**, never a client secret. The certificate's private key stays with the broker. Neither the agent nor the MCP gateway ever holds it.
+- **In Microsoft's logs, the caller is the broker's app,** not the person or the agent. In Microsoft Graph activity logs (if you collect them: they need Entra ID P1 and an Azure log destination), each request shows the broker's `AppId` and `ServicePrincipalId`, with `ClientAuthMethod` 2 (certificate).
+- **Cloud Locksmith's audit adds who and why.** Every record carries its session's ID (`run_id`). The session's first record names the person who started it (their tenant and object ID); a later one records the profile, the lifetime and when they signed in. Each Graph response record keeps the `request-id` Microsoft returned, which Microsoft documents for correlating a request. We haven't yet confirmed it matches the `RequestId` in Graph activity logs (A-36).
+
+One Graph response record, from the quick start's fictional tenant:
+
+```json
+{
+  "seq": 6,
+  "created_at": "2026-11-01T09:51:21.774111Z",
+  "event_type": "GRAPH_RESPONSE",
+  "status": "succeeded",
+  "tenant_id": "d3e0d3e0-0000-4000-8000-000000000001",
+  "run_id": "e14ee437-d7c5-4855-827f-4dac7ad7ae52",
+  "operation": "users.list_with_sign_in_activity",
+  "http_status": 200,
+  "item_count": 2,
+  "duration_ms": 84,
+  "graph_request_id": "fake-page-0",
+  "previous_hash": "7b1af721a56e9b6371865b2eb2a1e8bf71ff92753d3515c8070eadea094a4069",
+  "record_hash": "95ec8571feccc2b8b6e8f6e2663eb8f22d5e6ad9d768ec116fd1a93f71d597b4"
+}
+```
+
+- **On a real tenant,** `graph_request_id` is the GUID Microsoft returned. The fake Graph used here returns `fake-page-0`.
+- **The same session's first record** (`seq` 1, `RUN_REQUESTED`) has `actor_tid` and `actor_oid`: the person.
+- **The `GRAPH_REQUEST` record before this one** has the exact request sent, `/v1.0/users?$select=…`, written before it was sent.
+
+## What v0.1 does not do
 
 - **Execute changes.** Proposals are never executed. Approved changes are on the [roadmap](docs/roadmap.md), not in v0.1.
 - **Cover everything in its area:**
