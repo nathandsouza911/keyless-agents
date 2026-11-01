@@ -1558,7 +1558,7 @@ Status values: `proposed` (design, awaiting approval), `accepted` (approved, not
   - `tests/unit/test_mcp_gateway_tools.py::test_a_refusal_is_generic_and_says_whether_anything_was_sent`: the exact payload for each reason class, and that the broker's code never appears in it;
   - `tests/unit/test_mcp_gateway_directory_tools.py::test_a_refused_proposal_is_explained`;
   - one mutant (the specific reason appended to the agent's text), killed.
-- **Discoverability:** re-run after the change; see `docs/spikes/mcp-discoverability.md`.
+- **Discoverability (2026-11-01, Sonnet, quick start):** the 20 fixed prompts re-run after the change, **0/20 failed** (unchanged). **Limit:** no run reached a refusal the agent sees. The only refusals were the five internal `write_not_executable` decisions behind proposals, which the agent receives as a filed proposal. So this shows that tool use is unaffected, not how agents respond to the new wording.
 - **Limits:**
   - The split between "not permitted" and "session no longer valid" still tells the agent which of the two it hit. That's deliberate: it has to tell the user to start a new session, rather than retry.
   - Timing and the HTTP status of the gateway's own 401 are unchanged.
