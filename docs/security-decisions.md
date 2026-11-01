@@ -163,6 +163,7 @@ Status values: `proposed` (design, awaiting approval), `accepted` (approved, not
   - A DBA can still rewrite the chain after the last checkpoint, and truncate the tail since then (RR-2, RR-3).
   - Documented in threat-model §6.
   - Customer-facing wording is "tamper-evident", never "tamper-proof".
+  - **Public wording (public feedback, 2026-11-01):** "tamper-evident" always comes with its limit: whoever controls the host or the database can rewrite the chain after the last checkpoint stored off-host. `docs/audit-checkpoints.md` explains how to run and store checkpoints off-host until scheduling is built. Tested: `tests/unit/test_audit_checkpoint_docs.py` (every README mention carries the qualification; every command in the guide exists).
 
 ## SD-007: Fail closed before the request; withhold data after an audit failure
 

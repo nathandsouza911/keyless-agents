@@ -16,7 +16,7 @@ People want AI agents to investigate, and eventually change, Microsoft Entra and
 | Only declared fields leave the broker | Per-operation response filtering, including expanded objects | `tests/security/test_agent_reads.py` (SD-053) |
 | No change is ever executed | No executable write operation exists; asking files an inert proposal | proposal tests: Graph receives only the lookup GET (SD-054) |
 | Every Graph request and refusal is recorded first | Write-ahead audit: no record, no request | the fail-closed broker tests (SD-007, SD-014) |
-| Tampering with the record is detectable | A hash chain, verified on each session page and by `clw audit-verify` | chain tests (SD-005, SD-006). *Tamper-evident, not tamper-proof:* someone with database write access can rewrite the whole chain consistently, and v0.1 keeps no copy off the host. Keep your own copy of the chain head if that matters |
+| Tampering with the record is detectable | A hash chain, verified on each session page and by `clw audit-verify` | chain tests (SD-005, SD-006). *Tamper-evident only up to the last off-host checkpoint:* whoever controls the host or the database can rewrite the chain consistently after it. v0.1 doesn't schedule or store checkpoints off-host for you; see [audit-checkpoints.md](audit-checkpoints.md) |
 | A session ends when you say, or when it expires | A capability stored only as a hash, cleared on revocation; the broker refuses it after its deadline | session and theft/replay tests (SD-048, SD-049) |
 
 The security tests are themselves tested: `scripts/audit_mutation_check.py` breaks a set of chosen checks on purpose, and the suite must catch each break. That covers the listed mutants, not every possible fault.

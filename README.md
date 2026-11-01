@@ -26,7 +26,7 @@ Cloud Locksmith sits between an AI agent (Claude Code, or any MCP client) and Mi
 - **The agent works inside a session** a person started, under a profile the person chose, which expires.
 - **Cloud Locksmith enforces the profile,** not the agent or the model. A call outside the profile is refused before anything reaches Microsoft, the refusal is audited, and the agent is told why.
 - **Changes are never executed.** An agent can ask for one, and the request is filed as a proposal for a person to see.
-- **Everything goes into a tamper-evident audit trail,** per session: every Graph request and every refusal.
+- **Everything goes into a hash-chained audit trail,** per session: every Graph request and every refusal. It's tamper-evident **only up to your last off-host checkpoint**: whoever controls the host or the database can rewrite everything after it ([how to checkpoint](docs/audit-checkpoints.md)).
 
 ## See it working in about 10 minutes
 
@@ -52,7 +52,7 @@ The full walkthrough is in [`quickstart/README.md`](quickstart/README.md). It co
 | **Profiles** | Name the operations a session may call. Each operation fixes its request and the properties it may return, and Cloud Locksmith drops everything else Graph sends |
 | **Refusals** | Recorded in the session's audit trail. The agent is told why, and whether anything was sent to Microsoft |
 | **Proposals** | A requested change is refused, bound to the exact object and request by hash, and filed for a person to see. The target's name comes from Cloud Locksmith's own lookup, never from the agent. **Nobody can approve or execute a proposal in v0.1** |
-| **Audit** | Write-ahead and hash-chained: the record is written before the request is sent, and if it can't be written, nothing is sent. Tamper-evident: a changed or deleted record is detected when the chain is verified |
+| **Audit** | Write-ahead and hash-chained: the record is written before the request is sent, and if it can't be written, nothing is sent. A changed or deleted record is detected when the chain is verified. **A consistent rewrite of the whole chain is not**, unless a signed checkpoint stored where the host and the DBA can't write still covers it. v0.1 doesn't schedule checkpoints or store them off-host for you: [docs/audit-checkpoints.md](docs/audit-checkpoints.md) shows how |
 
 ### What v0.1 does not do
 
