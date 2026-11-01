@@ -33,7 +33,7 @@ Cloud Locksmith sits between an AI agent (Claude Code, or any MCP client) and Mi
 No Microsoft tenant, Azure account or credentials needed. A fake Microsoft Graph serves a fictional organisation inside Docker. You need Docker with Compose v2, and [Claude Code](https://docs.claude.com/en/docs/claude-code).
 
 ```sh
-git clone <this repository> && cd keyless-agents
+git clone https://github.com/nathandsouza911/keyless-agents.git && cd keyless-agents
 docker compose -f quickstart/compose.yml up -d --build
 ```
 
